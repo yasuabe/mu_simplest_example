@@ -7,10 +7,10 @@ object Protocols {
   case class Name(value: String)
 
   @message
-  case class Greet(greet: String)
+  case class Greeting(value: String)
 
   @service(Protobuf)
   trait SimplestService[F[_]] {
-    def greet(name: Name): F[Greet]
+    def greet(name: Name): F[Greeting]
   }
 }

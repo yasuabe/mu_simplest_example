@@ -4,6 +4,7 @@ import cats.effect._
 import cats.ApplicativeError
 import cats.effect.{Async, ConcurrentEffect, Resource}
 import cats.syntax.apply._
+import cats.syntax.flatMap._
 import cats.syntax.functor._
 import cats.syntax.applicativeError._
 import io.grpc.StatusRuntimeException
@@ -12,18 +13,19 @@ import higherkindness.mu.rpc.config.channel.ConfigForAddress
 import monix.eval.{Task, TaskApp}
 import scala.concurrent.ExecutionContext
 
-case class SimplestClient[F[_]: ConcurrentEffect](
-    client: Resource[F, SimplestService[F]]) {
+import ClientApp.put
 
-  def greet(name: String): F[Unit] =
-    Async[F].delay(println(s"greeting to $name")) *>
-      client.use(_.greet(Name(name)))
-        .map { g => println(s"got a greet from server: $g") }
-        .handleErrorWith {
-          case e: StatusRuntimeException =>
-            Async[F].delay(println(s"RPC failed: ${e.getStatus} $e")) *>
-              ApplicativeError[F, Throwable].raiseError(e)
-        }
+case class SimplestClient[F[_]: ConcurrentEffect](
+    service: Resource[F, SimplestService[F]]) {
+
+  def greet(n: String): F[Unit] = put[F](s"greeting to $n") *>
+    service.use(_.greet(Name(n)))
+      .flatMap { g => put(s"got a greeting from server: $g") }
+      .handleErrorWith {
+        case e: StatusRuntimeException =>
+          put(s"RPC failed: ${e.getStatus} $e") *>
+            ApplicativeError[F, Throwable].raiseError(e)
+      }
 }
 object SimplestClient {
   def apply[F[_]: ConcurrentEffect](implicit ec: ExecutionContext): F[SimplestClient[F]] =
@@ -34,13 +36,12 @@ object SimplestClient {
 object ClientApp extends TaskApp {
   implicit val ec: ExecutionContext = scheduler
 
-  private def printIO(line: String) = Task {
-    println(s"${ Thread.currentThread().getId }: $line")
-  }
+  def put[F[_]: Async](line: String): F[Unit] = Async[F].delay(println(line))
+
   def run(args: List[String]): Task[ExitCode] = for {
-    _      <- printIO(s"Starting client, interpreting to Future ...")
+    _      <- put[Task](s"Starting client ...")
     client <- SimplestClient[Task]
     _      <- client.greet("World")
-    _      <- printIO(s"Finishing program interpretation ...")
+    _      <- put[Task](s"Finishing program ...")
   } yield ExitCode.Success
 }
